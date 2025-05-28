@@ -1,0 +1,14 @@
+{
+    "unclear_product_from_catalog__qtype": "О непонятном товаре, но из нашего каталога",
+    "specified_product__qtype": "На конкретные товары из нашего каталога (цены, наличие, остатки и другая информация о товаре, документах, сертификатах итд)",
+    "order__qtype": "О заказе",
+    "compatability_with_other_products__qtype": "О применимости с другими товарами",
+    "product_usability__qtype": "Об использовании товара",
+    "delivery__qtype": "О доставке",
+    "operator_request__qtype": "Требование связаться с оператором",
+    "internal_docs__qtype": "Внутренние регламенты по работе",
+    "company_general_info__qtype": "Общая информация о компании",
+    "sales_info__qtype": "Информация об акциях, скидках или новостях",
+    "personal_info_change_request__qtype": "Запрос на изменение личных настроек",
+    "other__qtype": "Запрос не по нашей деятельности и товарам"
+}
