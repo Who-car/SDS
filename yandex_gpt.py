@@ -1,29 +1,34 @@
-import json, re, time, os
-from dotenv import load_dotenv
+import json, re, time
+from config import AUTH, FOLDER_ID, ASSISTANT_ID
 from yandex_cloud_ml_sdk import YCloudML
 
-load_dotenv()
-FOLDER_ID = os.getenv("FOLDER_ID")
-AUTH = os.getenv("AUTH")
+assistant = None
+sdk = YCloudML(folder_id=FOLDER_ID, auth=AUTH)
+model = sdk.models.completions("yandexgpt-lite").configure(
+    temperature=0.0, max_tokens=200
+)
+if ASSISTANT_ID:
+    assistant = sdk.assistants.get(ASSISTANT_ID)
+if not assistant:
+    assistant = sdk.assistants.create(
+        model, ttl_days=4, expiration_policy="since_last_active", max_tokens=500
+    )
 
 with open("metadata/categories.json", encoding="utf-8") as f:
-    categories_meta: dict[str, str] = json.load(f)
-    category_keys = list(categories_meta.keys())
-    keys_str = ", ".join(category_keys)
-
-sdk = YCloudML(folder_id=FOLDER_ID, auth=AUTH)
-
-model = sdk.models.completions("yandexgpt").configure(temperature=0.0, max_tokens=300)
+        categories_meta: dict[str, str] = json.load(f)
+        category_keys = list(categories_meta.keys())
+        keys_str = ", ".join(category_keys)
 
 PROMPT = """
 Список категорий:
 {categories}
 
-Вы — ассистент. По входной строке пользовательского запроса выделите:
-1) категорию (один из списка выше)
-2) артикулы (articles),
-3) тип продукта (keys),
-4) характеристики (characteristics) и их значения.
+Вы — ассистент. По входной строке пользовательского запроса сделайте семантический анализ и выделите:
+1) категорию (один из списка выше),
+2) намерение (intention),
+3) артикулы (articles),
+4) тип продукта (keys),
+5) характеристики (characteristics) и их значения.
 
 По блокам:
 - include: всё, что явно запрашивается или упоминается без негатива;
@@ -33,10 +38,11 @@ PROMPT = """
 - Любые фразы с «не дороже», «не дороже чем», «не более», «не выше» → exclude (цена > X).
 - Любые фразы с «не дешевле», «не менее», «минимум» → include (цена ≥ X).
 
-Верните строго JSON в таком формате:
+Если категория = 'specified_product__qtype', то верните строго JSON в таком формате:
 
 {{
-  "category": "<название категории>"
+  "category": "<название категории>",
+  "намерение": "<намерение>",
   "include": {{
     "articles": [<список артикулов>],
     "keys": [<тип продукта>],
@@ -55,22 +61,44 @@ PROMPT = """
   }}
 }}
 
-Пользовательский запрос:
-\"\"\"{query}\"\"\"
+В случае любой другой категории, верните JSON в таком формате:
+{{
+  "category": "<название категории>",
+  "намерение": "<намерение>"
+}}
 """
+system_rule=PROMPT.format(categories=keys_str)
 
+def analyze_query(thread_id: str, query: str) -> tuple[dict, any]:
+    start_time = time.time()
 
-def analyze_query(query: str) -> tuple[dict, any]:
-    prompt = PROMPT.format(categories=keys_str, query=query.strip())
-    response = model.run(prompt)
+    thread = None
+    if thread_id:
+        thread = sdk.threads.get(thread_id)
+        for message in thread:
+            print(message.text)
+    if not thread:
+        print('thread not exists - creating...')
+        thread = sdk.threads.create(
+            name="SimpleAssistant", ttl_days=1, expiration_policy="static"
+        )
+        thread.write({"text": system_rule, "role": "USER"})
+    
+    thread.write(query)
+    run = assistant.run(thread, custom_prompt_truncation_strategy="auto")
+    result = run.wait()
+
+    end_time = time.time()
+    print(f"Время на обработку запроса: {end_time-start_time:.2f}с")
+    print(f"Входные токены: {result.usage.input_text_tokens}, выходные токены: {result.usage.completion_tokens}, всего: {result.usage.total_tokens}")
     try:
-        json_str = re.search(r"\{.*\}", response.text, flags=re.DOTALL).group(0)
+        json_str = re.search(r"\{.*\}", result.message.parts[0], flags=re.DOTALL).group(0)
         output = json.loads(json_str)
     except (json.JSONDecodeError, IndexError) as e:
         raise RuntimeError(
-            f"Не удалось распарсить ответ модели: {e}\nОтвет модели: {response}"
+            f"Не удалось распарсить ответ модели: {e}\nОтвет модели: {result}"
         )
-    return output, response.usage
+    return output, thread
 
 
 if __name__ == "__main__":
