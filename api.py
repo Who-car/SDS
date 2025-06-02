@@ -1,101 +1,119 @@
-from fastapi import FastAPI, HTTPException
-from cachetools import TTLCache
+from fastapi import FastAPI, HTTPException, Request
 from contextlib import asynccontextmanager
-from pydantic import BaseModel
-from yandex_gpt import analyze_query
-from config import CACHE_TTL_SECONDS, CACHE_TTL_SIZE, USERS_PATH, log_context, log_request
-from typing import Optional, Dict
-import csv, os, uuid, time
+import uuid
+import httpx
 
-threads = TTLCache(maxsize=CACHE_TTL_SIZE, ttl=CACHE_TTL_SECONDS)
+from dto import QueryRequest, QueryResponse
+from chat_service import get_response
+from utils import hash_password
+from config import PRODUCT_TYPE, PRODUCTS_MODULE_URL
+from repository import (
+    init,
+    get_user_by_token_id,
+    get_thread_by_user,
+    add_new_user,
+    add_token,
+    get_user_by_INN,
+    get_token_by_user,
+)
+from validators import (
+    validate_fullname,
+    validate_password,
+    validate_inn,
+    validate_phone
+)
 
-class QueryRequest(BaseModel):
-    user_id: str
-    text: str
-
-class QueryResponse(BaseModel):
-    result: object
-
-
-def load_user_threads(user_id=None) -> Dict[str, Dict[str, str]]:
-    result: Dict[str, Dict[str, str]] = {}
-    if not os.path.exists(USERS_PATH):
-        return result
-
-    with open(USERS_PATH, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            uid = row["id"]
-            data = {
-                "token": row.get("token", ""),
-                "source": row.get("source", ""),
-                "thread_id": row.get("thread_id", "")
-            }
-            if uid == user_id: return data
-            result[uid] = data
-        if user_id: return None
-    return result
-
-
-def save_user_threads(data: Dict[str, Dict[str, str]]):
-    os.makedirs(os.path.dirname(USERS_PATH), exist_ok=True)
-    with open(USERS_PATH, "w", newline="", encoding="utf-8") as f:
-        fieldnames = ["id", "token", "source", "thread_id"]
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for uid, info in data.items():
-            writer.writerow({
-                "id": uid,
-                "token": info.get("token", ""),
-                "source": info.get("source", ""),
-                "thread_id": info.get("thread_id", "")
-            })   
+# TODO: добавить вызов фиктивного метода (url - из конфига, тело - полученный запрос); Ожидаем в ответ какой-то json
+# TODO: сделать тг-бота с:
+# - отправкой регистрационной формы
+# - сохранением токена где-то локально
+# - отправкой запроса на этот модуль
+# - показыванием options в виде кнопок
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    user_threads = load_user_threads()
-    for user_id, info in user_threads.items():
-        threads[user_id] = {
-            "token": info.get("token", ""),
-            "source": info.get("source", ""),
-            "thread_id": info.get("thread_id", ""),
-        }
-
+    init()
     yield
-
-    save_user_threads(dict(threads.items()))
 
 app = FastAPI(lifespan=lifespan)
 
-@app.post("/chat", response_model=QueryResponse)
-async def chat(req: QueryRequest):
-    request_id = str(uuid.uuid4())
-    user_data: Optional[Dict[str, str]] = threads.get(req.user_id)
 
-    if user_data is None:
-        user_data = load_user_threads(req.user_id)
-        if user_data is None:
-            user_data = {"token": "", "source": "", "thread_id": ""}
-        threads[req.user_id] = user_data
+@app.post("/login")
+async def login(request: Request):
+    payload = await request.json()
+    fullname = payload.get("fullname", "").strip()
+    phone = payload.get("phone", "").strip()
+    inn = payload.get("inn", "").strip()
+    password = payload.get("password", "")
 
-    thread_id = user_data.get("thread_id", "")
+    validate_fullname(fullname)
+    validate_phone(phone)
+    validate_inn(inn)
+    validate_password(password)
 
-    log_request(request_id, req.user_id, "", req.text)
+    password_hash = hash_password(password)
+
+    user = get_user_by_INN(inn)
+    if user:
+        user_id = user.get("id")
+        stored_hash = user.get("password_hash")
+        if stored_hash != password_hash:
+            raise HTTPException(status_code=401, detail="Invalid credentials.")
+        
+        token = get_token_by_user(user_id)
+        if not token:
+            new_token = uuid.uuid4().hex
+            add_token(user_id, new_token)
+            return {"token": new_token}
+        return {"token": token}
+    else:
+        user_id = add_new_user(
+            fullname=fullname, INN=inn, phone=phone, password_hash=password_hash
+        )
+        new_token = uuid.uuid4().hex
+        add_token(user_id, new_token)
+        return {"token": new_token}
+
+
+@app.post("/chat")
+async def chat(req: QueryRequest, request: Request):
+    request_id = uuid.uuid4().hex
+    token = request.headers.get("token")
+    origin = request.headers.get("origin", "")
+
+    if not token:
+        raise HTTPException(status_code=401, detail="Token header is missing.")
+
+    user_id = get_user_by_token_id(token)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token.")
+
+    thread_id = get_thread_by_user(user_id)
 
     try:
-        start_time = time.time()
-        response, thread, usage = analyze_query(thread_id, req.text)
-        end_time = time.time()
+        response = await get_response(request_id, user_id, thread_id, req.text, token, origin)
+        if getattr(response, "category", None) == PRODUCT_TYPE:
+            async with httpx.AsyncClient() as client:
+                external_resp = await client.get(
+                    PRODUCTS_MODULE_URL,
+                    json={
+                        "source": origin,
+                        "token": token,
+                        "payload": response
+                    }
+                )
+
+            if external_resp.status_code == 200:
+                data = external_resp.json()
+                result_text = data.get("result_text")
+                options = data.get("options", [])
+                return QueryResponse(result_text=result_text, options=options)
+            else:
+                return QueryResponse(result_text=external_resp.error, options=[])
+
+        return QueryResponse(result_text=response, options=[])
+
     except Exception as e:
-        return HTTPException(500, detail=str(e))
-
-    # TODO: добавить проверку категории;
-
-    if (thread_id != thread.id):
-        user_data["thread_id"] = str(thread.id)
-        threads[req.user_id] = user_data
-
-    log_context(request_id, req.user_id, response, end_time-start_time, usage)
-
-    return QueryResponse(result=response)
+        print(e)
+        return HTTPException(status_code=500, detail=str(e))

@@ -1,26 +1,16 @@
-import os, json, pathlib, csv
-from datetime import datetime
+import os, json
 from dotenv import load_dotenv
-from rich import print as rprint
 
 load_dotenv()
-
-
-def local_path(path: str) -> pathlib.Path:
-    return pathlib.Path(__file__).parent / path
-
 
 AUTH = os.getenv("AUTH")
 FOLDER_ID = os.getenv("FOLDER_ID")
 PORT = int(os.getenv("PORT"))
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
-CACHE_TTL_SECONDS = 24 * 60 * 60
-CACHE_TTL_SIZE = 10_000
+PRODUCTS_MODULE_URL = os.getenv("PRODUCTS_MODULE_URL")
+PRODUCT_TYPE = "specified_product__qtype"
 LOG_PATH = "logs"
-USERS_PATH = f"{LOG_PATH}/users.csv"
-REQUESTS_PATH = f"{LOG_PATH}/requests.csv"
-CONTEXT_PATH = f"{LOG_PATH}/context.csv"
-
+DB_PATH = f"{LOG_PATH}/app.db"
 PROMPT = """
 Список категорий:
 {categories}
@@ -80,58 +70,3 @@ with open("metadata/categories.json", encoding="utf-8") as f:
     keys_str = ", ".join(category_keys)
 
 SYSTEM_RULE = PROMPT.format(categories=keys_str)
-
-
-def log_request(request_id: str, user_id: str, source: str, query: str):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    row = {
-        "request_id": request_id,
-        "user_id": user_id,
-        "source": source,
-        "timestamp": timestamp,
-        "status": "Новый",
-    }
-
-    with open(REQUESTS_PATH, "a", newline="", encoding="utf-8") as f:
-        fieldnames = ["request_id", "user_id", "source", "timestamp", "status"]
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        if not os.path.exists(REQUESTS_PATH):
-            writer.writeheader()
-        writer.writerow(row)
-
-    preview = query[:50] + ("…" if len(query) > 50 else "")
-    rprint(
-        f"[bold green]REQUEST[/bold green] "
-        f"[white]id=[/white][cyan]{request_id}[/cyan] "
-        f"[white]user=[/white][magenta]{user_id}[/magenta] "
-        f"[white]src=[/white][green]{source or '-'}[/green] "
-        f"[white]time=[/white][yellow]{timestamp}[/yellow] "
-        f"[white]preview=[/white][grey62]{preview}[/grey62]"
-    )
-
-
-def log_context(
-    request_id: str, user_id: str, response_obj: object, time: int, usage: any
-):
-    response_json_str = json.dumps(response_obj, ensure_ascii=False)
-    row = {
-        "request_id": request_id,
-        "user_id": user_id,
-        "response_json": response_json_str,
-    }
-
-    with open(CONTEXT_PATH, "a", newline="", encoding="utf-8") as f:
-        fieldnames = ["request_id", "user_id", "response_json"]
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        if not os.path.exists(CONTEXT_PATH):
-            writer.writeheader()
-        writer.writerow(row)
-    rprint(
-        f"[bold blue]CONTEXT[/bold blue] "
-        f"[white]id=[/white][cyan]{request_id}[/cyan] "
-        f"[white]user=[/white][magenta]{user_id}[/magenta] "
-        f"[white]response time=[/white][grey62]{time}s[/grey62] "
-        f"[white]input tokens=[/white][grey62]{usage.input_text_tokens}[/grey62] "
-        f"[white]output tokens=[/white][grey62]{usage.completion_tokens}[/grey62] "
-        f"[white]total tokens=[/white][grey62]{usage.total_tokens}[/grey62]"
-    )

@@ -1,5 +1,5 @@
-import json, re, time, os
-from config import AUTH, FOLDER_ID, ASSISTANT_ID, SYSTEM_RULE, local_path
+import json, re, os
+from config import AUTH, FOLDER_ID, ASSISTANT_ID, SYSTEM_RULE
 from yandex_cloud_ml_sdk import YCloudML
 
 assistant = None
@@ -13,25 +13,13 @@ sdk.setup_default_logging()
 if ASSISTANT_ID:
     assistant = sdk.assistants.get(ASSISTANT_ID)
 if not assistant:
-    # files = []
-    # for path in ["catalog.json"]:
-    #     file = sdk.files.upload(
-    #         local_path(path),
-    #         ttl_days=5,
-    #         expiration_policy="static",
-    #     )
-    #     files.append(file)
-
-    # operation = sdk.search_indexes.create_deferred(files)
-    # search_index = operation.wait()
-    # tool = sdk.tools.search_index(search_index)
     assistant = sdk.assistants.create(
         model, ttl_days=4, expiration_policy="since_last_active", max_tokens=500
     )
     os.environ["ASSISTANT_ID"] = assistant.id
 
 
-def analyze_query(thread_id: str, query: str) -> tuple[dict, any, any]:
+async def analyze_query(thread_id: str, query: str) -> tuple[dict, any, any]:
 
     # TODO: добавить обновление треда
     # TODO: добавить обновление ассистента
