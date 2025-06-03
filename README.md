@@ -1,11 +1,45 @@
 ## Usage
 
+Prerequisities: на машине должен быть установлен Python3
+
+1. Добавить в корень проекта файл .env
+
+2. Прописать в консоли следующие команды:
 ```
-git clone https://github.com/Who-car/SDS.git
-cd SDS
+git clone https://github.com/Who-car/SDS.git sds-api
+cd sds-api
 pip install -r requirements.txt
 python main.py 
 ```
+
+3. Отправить login-запрос через Postman:
+```
+URL: http://localhost:8000/login
+HTTP-method: POST
+Body (json):
+{
+   "fullname": "user user user",
+   "inn": "000000000000",
+   "password": "999999",
+   "phone": "89999999999"
+}
+```
+В ответ возвращается token
+
+4. Отправить запрос с текстом через Postman:
+```
+URL: http://localhost:8000/chat
+HTTP-method: POST
+Headers: {
+    "Origin": "www.test.com",
+    "Token": token
+}
+Body (json):
+{
+   "text": "Я хочу купить кабель категории 5e 300В синего цвета. Артикул 42-0037"
+}
+```
+В ответ должен вернуться семантический анализ и ответ в формате json
 
 ## Updates
 
@@ -17,22 +51,6 @@ python main.py
 
 ## Примеры запросов
 
-0. Пример WebAPI запроса
+1. Пример WebAPI запроса
 
 ![web_api.png](img/web_api.png)
-
-1. Пример обычного запроса
-
-![regular_resp](img/regular_resp.png)
-
-2. Пример запроса о продукте не из нашего каталога (чуть позже добавим векторный поиск
-
-![other_product_resp](img/other_product_resp.png)
-
-3. Иногда запросы очень долго обрабатываются (случается редко, но все же)
-
-![very_long_resp](img/very_long_resp.png)
-
-4. При повторных запросах время ответа уменьшается
-
-![shortened_resp](img/shortened_resp.png)
