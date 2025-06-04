@@ -7,10 +7,13 @@ AUTH = os.getenv("AUTH")
 FOLDER_ID = os.getenv("FOLDER_ID")
 PORT = int(os.getenv("PORT"))
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+API_GATEWAY_BASE_URL = os.getenv("API_GATEWAY_BASE_URL")
 PRODUCTS_MODULE_URL = os.getenv("PRODUCTS_MODULE_URL")
 PRODUCT_TYPE = "specified_product__qtype"
 LOG_PATH = "logs"
 DB_PATH = f"{LOG_PATH}/app.db"
+TG_PATH = f"{LOG_PATH}/telegram.db"
 PROMPT = """
 Список категорий:
 {categories}

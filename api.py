@@ -1,7 +1,10 @@
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import Response
+from fastapi.encoders import jsonable_encoder
 from contextlib import asynccontextmanager
 import uuid
 import httpx
+import json
 
 from dto import QueryRequest, QueryResponse
 from chat_service import get_response
@@ -110,7 +113,7 @@ async def chat(req: QueryRequest, request: Request):
                 options = data.get("options", [])
                 return QueryResponse(result_text=result_text, options=options)
             else:
-                return QueryResponse(result_text=external_resp.error, options=[])
+                return QueryResponse(result_text=external_resp.error)
 
         return QueryResponse(result_text=response, options=[])
 

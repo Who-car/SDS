@@ -1,6 +1,9 @@
 from fastapi import HTTPException
 import re
 
+PHONE_REGEX = re.compile(r"^(?:\+7|8)\d{10}$")
+INN_REGEX = re.compile(r"^\d{10}|\d{12}$")
+
 def validate_fullname(fullname: str):
     if not fullname.strip():
         raise HTTPException(status_code=400, detail="Full name cannot be empty.")
@@ -15,7 +18,7 @@ def validate_fullname(fullname: str):
 def validate_phone(phone: str):
     if not phone.strip():
         raise HTTPException(status_code=400, detail="Phone number cannot be empty.")
-    if not re.match(r"^\d{10,15}$", phone):
+    if not PHONE_REGEX.match(phone):
         raise HTTPException(
             status_code=400, detail="Phone number must be 10 to 15 digits."
         )
@@ -24,7 +27,7 @@ def validate_phone(phone: str):
 def validate_inn(inn: str):
     if not inn.strip():
         raise HTTPException(status_code=400, detail="INN cannot be empty.")
-    if not re.match(r"^(\d{10}|\d{12})$", inn):
+    if not INN_REGEX.match(inn):
         raise HTTPException(
             status_code=400, detail="INN must be either 10 or 12 digits."
         )
